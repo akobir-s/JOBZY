@@ -1,56 +1,54 @@
-.venv/
-db.sqlite3
-# Python
+# === Python ===
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
 *.pyc
 
-# Environments
-env/
-venv/
-ENV/
+# === Environments ===
+.env
+.env.*
 *.env
+venv/
+.venv/
+ENV/
 
-# Django specific
+# === Django ===
 *.sqlite3
 db.sqlite3
 *.log
 local_settings.py
-
-# IDE/editor configs
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS generated
-.DS_Store
-Thumbs.db
-
-# Static and media (if generated during runtime)
-staticfiles/
 media/
+staticfiles/
 
-# Migrations (optional - usually better to include them)
+# === Migrations (optional - keep them if deploying) ===
 # */migrations/*.py
 # */migrations/*.pyc
 
-# Coverage / test output
-htmlcov/
-.coverage
-coverage.xml
-*.cover
-*.log
+# === IDEs / Editors ===
+.vscode/
+.idea/
+*.swo
+*.swp
 
-# Compiled files
+# === OS generated ===
+.DS_Store
+Thumbs.db
+
+# === Build files ===
 *.egg
 *.egg-info/
 dist/
 build/
 .eggs/
 
-# JWT tokens or secrets (if saved)
+# === JWT / SSL keys ===
 *.pem
 *.key
+
+# === Coverage / Test reports ===
+.coverage
+coverage.xml
+htmlcov/
+*.cover
+*.log
