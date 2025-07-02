@@ -11,11 +11,14 @@ class User(AbstractUser):
     phone = models.CharField(max_length=20, unique=True)
     avatar = models.URLField(blank=True, null=True)
     is_professional = models.BooleanField(default=False)
-    is_verified  = models.BooleanField(default=False)
+    is_verified = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    last_login  = models.DateTimeField(null=True)
+    last_login = models.DateTimeField(null=True)
+    previous_login = models.DateTimeField(null=True, blank=True)
 
+    def __str__(self):
+        return self.username
 
 
 class ProfessionalProfile(models.Model):
@@ -26,9 +29,12 @@ class ProfessionalProfile(models.Model):
     is_available = models.BooleanField(default=True)
     address = models.CharField(max_length=255)
     license_number = models.CharField(max_length=100, blank=True)
-    average_rating  = models.FloatField(default=0.0)
+    average_rating = models.FloatField(default=0.0)
     total_reviews = models.IntegerField(default=0)
     total_completed_jobs = models.IntegerField(default=0)
+
+    def __str__(self):
+        return f"{self.user.username} - {self.address}"
 
 
 class ServiceCategory(models.Model):
@@ -37,6 +43,10 @@ class ServiceCategory(models.Model):
     icon = models.CharField(max_length=50)
     parent = models.ForeignKey('self', null=True, on_delete=models.SET_NULL)
     description = models.TextField(blank=True)
+
+    def __str__(self):
+        return self.name
+
 
 class ProfessionalService(models.Model):
     professional = models.ForeignKey(ProfessionalProfile, on_delete=models.CASCADE)
@@ -50,12 +60,20 @@ class ProfessionalService(models.Model):
     is_available = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    def __str__(self):
+        return f"{self.title} - {self.professional.user.username}"
+
+
 class AvailabilitySlot(models.Model):
     professional = models.ForeignKey(ProfessionalProfile, on_delete=models.CASCADE)
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()
     recurrence_rule = models.CharField(max_length=100, blank=True)
     is_booked = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.professional.user.username} ({self.start_time} - {self.end_time})"
+
 
 class Booking(models.Model):
     STATUS_CHOICES = [
@@ -77,7 +95,10 @@ class Booking(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     cancellation_reason = models.TextField(blank=True, null=True)
 
-    
+    def __str__(self):
+        return f"Booking by {self.client.username} for {self.service.title}"
+
+
 class Payment(models.Model):
     STATUS_CHOICES = [
         ('PENDING', 'Pending'),
@@ -86,9 +107,9 @@ class Payment(models.Model):
         ('REFUNDED', 'Refunded')
     ]
     PAYMENT_METHOD_CHOICES = [
-    ('CARD', 'Card'),
-    ('CASH', 'Cash'),
-    ('OTHER', 'Other'),
+        ('CARD', 'Card'),
+        ('CASH', 'Cash'),
+        ('OTHER', 'Other'),
     ]
 
     booking = models.OneToOneField(Booking, on_delete=models.PROTECT)
@@ -99,33 +120,35 @@ class Payment(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     processed_at = models.DateTimeField(null=True)
 
+    def __str__(self):
+        return f"{self.booking.client.username} - {self.amount} ({self.status})"
+
 
 class Review(models.Model):
-    booking = models.OneToOneField(Booking, on_delete=models.CASCADE,
-                                   related_name='review')
-    professional = models.ForeignKey(ProfessionalProfile,
-                                     on_delete=models.CASCADE,
-                                     related_name='reviews')
-    client = models.ForeignKey(User, on_delete=models.SET_NULL,
-                               null=True, related_name='client_reviews')
-    rating = models.IntegerField(validators=[MinValueValidator(1),
-                                             MaxValueValidator(5)])
+    booking = models.OneToOneField(Booking, on_delete=models.CASCADE, related_name='review')
+    professional = models.ForeignKey(ProfessionalProfile, on_delete=models.CASCADE, related_name='reviews')
+    client = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='client_reviews')
+    rating = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
     comment = models.TextField()
     response = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def __str__(self):
+        return f"Review by {self.client.username if self.client else 'Unknown'} - {self.rating} stars"
 
 
 class Message(models.Model):
-    sender = models.ForeignKey(User, on_delete=models.CASCADE,
-                               related_name='sent_messages')
-    recipient = models.ForeignKey(User, on_delete=models.CASCADE,
-                                  related_name='received_messages')
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_messages')
+    recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='received_messages')
     booking = models.ForeignKey(Booking, on_delete=models.CASCADE, null=True)
     content = models.TextField()
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"From {self.sender.username} to {self.recipient.username}"
+
 
 class Notification(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
@@ -133,6 +156,10 @@ class Notification(models.Model):
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     link = models.URLField(null=True)
+
+    def __str__(self):
+        return f"Notification for {self.user.username}"
+
 
 class AdminLog(models.Model):
     ACTION_CHOICES = [
@@ -145,3 +172,6 @@ class AdminLog(models.Model):
     target_id = models.IntegerField()
     details = models.JSONField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.action_type} by {self.admin.username if self.admin else 'Unknown'}"

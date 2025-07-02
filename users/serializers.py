@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import *
 from django.contrib.auth import get_user_model, hashers
 from rest_framework.exceptions import ValidationError
-from datetime import timezone
+from django.utils.text import slugify
 User = get_user_model()
 
 class UserRegisterSerializer(serializers.ModelSerializer):
@@ -74,11 +74,26 @@ class ProfessionalProfileSerializer2(serializers.ModelSerializer):
 
 
 
-
 class ServiceCategorySerializer(serializers.ModelSerializer):
+    slug = serializers.ReadOnlyField()
+
     class Meta:
         model = ServiceCategory
         fields = '__all__'
+
+    def create(self, validated_data):
+        name = validated_data['name']
+        slug = slugify(name)
+        if ServiceCategory.objects.filter(slug=slug).exists():
+            raise ValidationError({'name': 'Category with similar name already exists.'})
+        validated_data['slug'] = slug
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        if 'name' in validated_data:
+            validated_data['slug'] = slugify(validated_data['name'])
+        return super().update(instance, validated_data)
+
 
 
 class ProfessionalServiceSerializer(serializers.ModelSerializer):
@@ -150,3 +165,17 @@ class ProfessionalFilterServiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProfessionalService
         fields = '__all__'
+
+
+class UserProfileSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = User
+        fields = ['username',
+            'first_name',
+            'last_name',
+            'phone',
+            'avatar',
+            'previous_login']        
+        
+        read_only_fields = ('previous_login',)

@@ -59,6 +59,15 @@ class LoginUserView(APIView):
             password = serializer.validated_data.get('password')
             user = authenticate(username=username, password=password)
             if user:
+                if user.last_login:
+                    print('im hre 1')
+                    user.previous_login = user.last_login
+                    user.last_login = timezone.now()
+                    user.save()
+                else:
+                    print('im hre2 1')
+                    user.last_login = timezone.now()
+                    user.save()       
                 token = MyTokenObtainPairSerializer.get_token(user)
                 refresh_token = str(token)
                 access_token = str(token.access_token)
@@ -167,12 +176,32 @@ class ProfessionalProfileViewSet(viewsets.ModelViewSet):
 class ServiceCategoryViewSet(viewsets.ModelViewSet):
     queryset = ServiceCategory.objects.all()
     serializer_class = ServiceCategorySerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    search_fields = ['name', 'description']
+    ordering_fields = ['name']
+    filterset_fields = ['parent']
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [permissions.AllowAny()]
+        return [permissions.IsAdminUser()]
+
+
 
 
 class ProfessionalServiceViewSet(viewsets.ModelViewSet):
     serializer_class = ProfessionalServiceSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+
+    search_fields = ['title', 'description']
+    filterset_fields = ['category', 'is_available', 'professional']
+    ordering_fields = ['fixed_price', 'min_price', 'max_price',
+                       'duration', 'created_at']
+
+
 
     def get_queryset(self):
         return ProfessionalService.objects.filter(professional__user=self.request.user)
@@ -186,6 +215,12 @@ class AvailabilitySlotViewSet(viewsets.ModelViewSet):
     serializer_class = AvailabilitySlotSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    search_fields = ['professional__user__username']
+    ordering_fields = ['start_time', 'end_time']
+    filterset_fields = ['is_booked', 'professional']
+
+
     def get_queryset(self):
         return AvailabilitySlot.objects.filter(professional__user=self.request.user)
 
@@ -197,6 +232,13 @@ class AvailabilitySlotViewSet(viewsets.ModelViewSet):
 class BookingViewSet(viewsets.ModelViewSet):
     serializer_class = BookingSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+
+    ordering_fields = ['start_time', 'end_time', 'created_at', 'status']
+    search_fields = ['professional__user__username', 'service__title', 'status']
+    filterset_fields = ['status', 'service', 'slot']
+
 
     def get_queryset(self):
         return Booking.objects.filter(client=self.request.user)
@@ -267,6 +309,15 @@ class ProfessionalSearchView(generics.ListAPIView):
     serializer_class = ProfessionalProfileSerializer
     permission_classes = [permissions.AllowAny]
 
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+
+    search_fields = ['user__username', 'bio', 'address',]
+    ordering_fields = ['hourly_rate', 'years_of_experience',
+                       'average_rating', 'total_completed_jobs']
+    filterset_fields = ['is_available', 'average_rating', 'years_of_experience']
+
+
+
     def get_queryset(self):
         return ProfessionalProfile.objects.all()
 
@@ -305,3 +356,36 @@ class PublicServiceListView(generics.ListAPIView):
 
     search_fields = ['title', 'description', 'category__name']
     ordering_fields = ['duration', 'fixed_price']
+
+
+
+# get user
+
+class UserProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        serializer = UserProfileSerializer(request.user)
+        if serializer:
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response({'error': "Not found"}, status=status.HTTP_404_NOT_FOUND)
+    
+    def put(self, request):
+        serializer = UserProfileSerializer(request.user, data=request.data,
+                                           partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+    def delete(self, request):
+        user = request.user
+        user.delete()
+        return Response({'detail': 'User deleted successfully.'},
+                        status=status.HTTP_204_NO_CONTENT)
+    
+
+
+# request for new  ServiceCategory
+

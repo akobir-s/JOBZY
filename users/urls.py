@@ -57,4 +57,5 @@ urlpatterns = [
     path('logout/', LogoutUserView.as_view(), name = 'loguot'),
     path('my-profile/', MyProfessionalView.as_view(), name='my-profile'),
     path('public-services/', PublicServiceListView.as_view(), name='public-services'),
+    path('user-profile/', UserProfileView.as_view(), name= 'user-profile'),
 ]
