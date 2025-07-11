@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.core.validators import MinValueValidator, MaxValueValidator
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
 
 
 class User(AbstractUser):
@@ -9,7 +11,7 @@ class User(AbstractUser):
     first_name = models.CharField(max_length=30)
     last_name = models.CharField(max_length=30)
     phone = models.CharField(max_length=20, unique=True)
-    avatar = models.URLField(blank=True, null=True)
+    avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
     is_professional = models.BooleanField(default=False)
     is_verified = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
@@ -59,6 +61,7 @@ class ProfessionalService(models.Model):
     duration = models.IntegerField()
     is_available = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    image = models.ImageField(upload_to='service_images/', null=True, blank=True)
 
     def __str__(self):
         return f"{self.title} - {self.professional.user.username}"

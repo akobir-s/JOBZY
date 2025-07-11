@@ -58,4 +58,6 @@ urlpatterns = [
     path('my-profile/', MyProfessionalView.as_view(), name='my-profile'),
     path('public-services/', PublicServiceListView.as_view(), name='public-services'),
     path('user-profile/', UserProfileView.as_view(), name= 'user-profile'),
+    path('services/<int:pk>/', ProfessionalServiceDetailView.as_view(), name='service-detail'),
+    path('update-avatar/', UpdateAvatarView.as_view(), name='update-avatar'),
 ]

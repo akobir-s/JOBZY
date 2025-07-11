@@ -16,6 +16,7 @@ from django.utils import timezone
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .filters import ProfessionalServiceFilter
 
+
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
@@ -60,12 +61,10 @@ class LoginUserView(APIView):
             user = authenticate(username=username, password=password)
             if user:
                 if user.last_login:
-                    print('im hre 1')
                     user.previous_login = user.last_login
                     user.last_login = timezone.now()
                     user.save()
                 else:
-                    print('im hre2 1')
                     user.last_login = timezone.now()
                     user.save()       
                 token = MyTokenObtainPairSerializer.get_token(user)
@@ -89,7 +88,6 @@ class LoginUserView(APIView):
 
 
 class LogoutUserView(APIView):
-    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         try:
@@ -330,7 +328,7 @@ class DashboardView(generics.RetrieveAPIView):
         data = {
             'user_info': {
                 'username': user.username,
-                'email': user.email
+                'phone': user.phone
             }
         }
         if user.is_professional:
@@ -388,4 +386,21 @@ class UserProfileView(APIView):
 
 
 # request for new  ServiceCategory
+
+class ProfessionalServiceDetailView(generics.RetrieveAPIView):
+    queryset = ProfessionalService.objects.all()
+    serializer_class = ProfessionalServiceSerializer2
+
+
+# AVATAR
+
+class UpdateAvatarView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request):
+        serializer = AvatarUpdateSerializer(instance=request.user, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({'avatar': serializer.data['avatar']}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

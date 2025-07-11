@@ -10,8 +10,6 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
-
-
 from pathlib import Path
 from datetime import timedelta
 import os
@@ -32,11 +30,23 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+
     'users.apps.UsersConfig',
+
     'rest_framework',
     'django_filters',
     'drf_yasg',
+    'channels',
 ]
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [('127.0.0.1', 6379)],
+        },
+    },
+}
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
@@ -54,7 +64,7 @@ ROOT_URLCONF = 'server.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [],  # Агар шаблонҳои иловагӣ доред, ин ҷо илова кунед
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -66,7 +76,16 @@ TEMPLATES = [
     },
 ]
 
+# --- Media files settings ---
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media' 
+
+# --- Static files settings ---
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')  
+
 WSGI_APPLICATION = 'server.wsgi.application'
+ASGI_APPLICATION = 'server.asgi.application'
 
 DATABASES = {
     'default': {
@@ -97,9 +116,6 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 
 USE_TZ = True
-
-STATIC_URL = '/static/'
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 AUTH_USER_MODEL = 'users.User'
 
@@ -133,6 +149,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://147.45.146.15:8000",
 ]
+
 CORS_ALLOW_CREDENTIALS = True
 CORS_EXPOSE_HEADERS = ["Content-Type", "Authorization"]
 CORS_ALLOW_HEADERS = ["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"]

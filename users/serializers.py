@@ -144,6 +144,7 @@ class NotificationSerializer(serializers.ModelSerializer):
         read_only_fields = ['user']
 
 
+
 class AdminLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = AdminLog
@@ -168,6 +169,7 @@ class ProfessionalFilterServiceSerializer(serializers.ModelSerializer):
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
+    previous_login = serializers.DateTimeField(format="%d-%m-%Y %H:%M:%S", required=False)
 
     class Meta:
         model = User
@@ -179,3 +181,34 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'previous_login']        
         
         read_only_fields = ('previous_login',)
+
+
+
+
+# july 10
+
+class UserMiniSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ('username', 'phone', 'avatar')
+
+
+class ProfessionalServiceSerializer2(serializers.ModelSerializer):
+    professional_user = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProfessionalService
+        fields = '__all__'  
+
+    def get_professional_user(self, obj):
+        user = obj.professional.user
+        return UserMiniSerializer(user).data
+
+
+
+
+
+class AvatarUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['avatar']
