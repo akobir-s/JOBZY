@@ -15,6 +15,10 @@ from rest_framework.decorators import action
 from django.utils import timezone
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .filters import ProfessionalServiceFilter
+from django.db.models import Q
+import uuid
+from rest_framework.exceptions import PermissionDenied
+
 
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -212,22 +216,37 @@ class ProfessionalServiceViewSet(viewsets.ModelViewSet):
         serializer.save(professional=professional)
 
 
+class IsProfessionalOwner(permissions.BasePermission):
+    def has_object_permission(self, request, view, obj):
+        # Allow read-only for all authenticated users
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        # Only the professional who owns the slot can modify it
+        return obj.professional.user == request.user
+
+
+
 class AvailabilitySlotViewSet(viewsets.ModelViewSet):
     serializer_class = AvailabilitySlotSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
+    permission_classes = [permissions.IsAuthenticated, IsProfessionalOwner]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     search_fields = ['professional__user__username']
     ordering_fields = ['start_time', 'end_time']
     filterset_fields = ['is_booked', 'professional']
 
-
     def get_queryset(self):
+        professional_id = self.request.query_params.get('professional')
+        if professional_id:
+            # Allow filtering by professional ID for authenticated users
+            return AvailabilitySlot.objects.filter(professional_id=professional_id)
+        # Default to slots owned by the authenticated professional
         return AvailabilitySlot.objects.filter(professional__user=self.request.user)
 
     def perform_create(self, serializer):
+        # Ensure only professionals can create slots for themselves
         professional = get_object_or_404(ProfessionalProfile, user=self.request.user)
         serializer.save(professional=professional)
+        
 
 
 class BookingViewSet(viewsets.ModelViewSet):
@@ -235,31 +254,77 @@ class BookingViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-
     ordering_fields = ['start_time', 'end_time', 'created_at', 'status']
     search_fields = ['professional__user__username', 'service__title', 'status']
     filterset_fields = ['status', 'service', 'slot']
 
-
     def get_queryset(self):
-        return Booking.objects.filter(client=self.request.user)
+        user = self.request.user
+        return Booking.objects.filter(
+            Q(client=user) | Q(professional__user=user)
+        ).distinct()
 
     def perform_create(self, serializer):
         serializer.save(client=self.request.user)
 
     @action(detail=True, methods=['post'])
-    def cancel(self, request, pk=None):
-        booking = self.get_object()
-        booking.status = 'CANCELLED'
-        booking.save()
-        return Response({'status': 'cancelled', 'booking_id': booking.id})
-
-    @action(detail=True, methods=['post'])
     def complete(self, request, pk=None):
         booking = self.get_object()
+        if booking.professional.user != request.user:
+            return Response({'error': 'Not allowed'}, status=403)
         booking.status = 'COMPLETED'
         booking.save()
         return Response({'status': 'completed', 'booking_id': booking.id})
+
+    @action(detail=True, methods=['post'])
+    def confirm(self, request, pk=None):
+        booking = self.get_object()
+        if booking.professional.user != request.user:
+            return Response({'error': 'Not allowed'}, status=403)
+        booking.status = 'CONFIRMED'
+        booking.save()
+
+        # notification 
+        Notification.objects.create(
+            user=booking.client,
+            message=f"Your booking for '{booking.service.title}' was confirmed!",
+            link=f"/bookings/{booking.id}/"
+        )
+
+        return Response({'status': 'confirmed', 'booking_id': booking.id})
+
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        booking = self.get_object()
+        user = request.user
+
+        if user != booking.client and user != booking.professional.user:
+            return Response({'error': 'Not allowed'}, status=403)
+
+        if booking.status in ['COMPLETED', 'CANCELLED']:
+            return Response({'error': 'Booking already completed or cancelled.'}, status=400)
+
+        booking.status = 'CANCELLED'
+        booking.save()
+
+        if user == booking.client:
+            message = f"{booking.client.username} has cancelled the booking for '{booking.service.title}'."
+            recipient = booking.professional.user
+        else:
+            message = f"Your booking for '{booking.service.title}' was cancelled by the professional."
+            recipient = booking.client
+
+        Notification.objects.create(
+            user=recipient,
+            message=message,
+            link=f"/bookings/{booking.id}/"
+        )
+
+        return Response({'status': 'cancelled', 'booking_id': booking.id})
+
+
+
 
 
 class PaymentViewSet(viewsets.ModelViewSet):
@@ -267,7 +332,48 @@ class PaymentViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return Payment.objects.filter(booking__client=self.request.user)
+        user = self.request.user
+        return Payment.objects.filter(
+            Q(booking__client=user) | Q(booking__professional__user=user)
+        ).distinct()
+
+    def perform_create(self, serializer):
+        booking = serializer.validated_data['booking']
+        if booking.client != self.request.user:
+            raise PermissionDenied("You can only pay for your own bookings.")
+
+        serializer.save(
+            status='PENDING',
+            transaction_id=f"TXN-{uuid.uuid4().hex[:10]}",
+        )
+
+        Notification.objects.create(
+            user=booking.professional.user,
+            message=f"You have received a payment request for '{booking.service.title}'",
+            link=f"/payments/{booking.id}/"
+        )
+
+    @action(detail=True, methods=['post'])
+    def confirm(self, request, pk=None):
+        payment = self.get_object()
+
+        if payment.booking.professional.user != request.user:
+            return Response({'error': 'Not allowed'}, status=403)
+
+        if payment.status != 'PENDING':
+            return Response({'error': 'Payment is not pending.'}, status=400)
+
+        payment.status = 'COMPLETED'
+        payment.processed_at = timezone.now()
+        payment.save()
+
+        Notification.objects.create(
+            user=payment.booking.client,
+            message=f"Your payment for '{payment.booking.service.title}' was confirmed.",
+            link=f"/payments/{payment.id}/"
+        )
+
+        return Response({'status': 'confirmed', 'payment_id': payment.id})
 
 
 
@@ -279,18 +385,18 @@ class ReviewViewSet(viewsets.ModelViewSet):
         return Review.objects.filter(client=self.request.user)
 
     def perform_create(self, serializer):
-        professional = serializer.validated_data.get('professional')
+        booking = serializer.validated_data.get('booking')
 
-        has_booking = Booking.objects.filter(
+        if booking.client != self.request.user:
+            raise ValidationError("You can only review your own bookings.")
+
+        if Review.objects.filter(booking=booking).exists():
+            raise ValidationError("You have already reviewed this booking.")
+
+        serializer.save(
             client=self.request.user,
-            professional=professional,
-            status='completed'  
-        ).exists()
-
-        if not has_booking:
-            raise ValidationError("You can only review professionals you've booked.")
-
-        serializer.save(client=self.request.user)
+            professional=booking.professional
+        )
 
 
 
@@ -305,7 +411,7 @@ class MessageViewSet(viewsets.ModelViewSet):
         serializer.save(sender=self.request.user)
 
 
-class NotificationViewSet(viewsets.ModelViewSet):
+class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = NotificationSerializer
     permission_classes = [permissions.IsAuthenticated]
 

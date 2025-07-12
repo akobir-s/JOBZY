@@ -108,28 +108,31 @@ class ProfessionalServiceSerializer(serializers.ModelSerializer):
 class AvailabilitySlotSerializer(serializers.ModelSerializer):
     class Meta:
         model = AvailabilitySlot
-        fields = '__all__'
-        read_only_fields = ['professional']
+        fields = ['id', 'professional', 'start_time', 'end_time', 'recurrence_rule', 'is_booked']
+        read_only_fields = ['professional', 'is_booked']
 
 
 class BookingSerializer(serializers.ModelSerializer):
     class Meta:
         model = Booking
         fields = '__all__'
-        read_only_fields = ['client']
+        read_only_fields = ['client', 'status', 'created_at', 'updated_at']
 
 
 class PaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payment
         fields = '__all__'
+        read_only_fields = ['status', 'transaction_id', 'created_at', 'processed_at']
+
 
 
 class ReviewSerializer(serializers.ModelSerializer):
     class Meta:
         model = Review
         fields = '__all__'
-        read_only_fields = ['client']
+        read_only_fields = ['client', 'professional']
+
 
 
 class MessageSerializer(serializers.ModelSerializer):
@@ -143,7 +146,6 @@ class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notification
         fields = '__all__'
-        read_only_fields = ['user']
 
 
 
