@@ -3,6 +3,7 @@ from .models import *
 from django.contrib.auth import get_user_model, hashers
 from rest_framework.exceptions import ValidationError
 from django.utils.text import slugify
+from unidecode import unidecode
 User = get_user_model()
 
 class UserRegisterSerializer(serializers.ModelSerializer):
@@ -74,6 +75,7 @@ class ProfessionalProfileSerializer2(serializers.ModelSerializer):
 
 
 
+
 class ServiceCategorySerializer(serializers.ModelSerializer):
     slug = serializers.ReadOnlyField()
 
@@ -83,7 +85,7 @@ class ServiceCategorySerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         name = validated_data['name']
-        slug = slugify(name)
+        slug = slugify(unidecode(name))  # ← for кириллик slug
         if ServiceCategory.objects.filter(slug=slug).exists():
             raise ValidationError({'name': 'Category with similar name already exists.'})
         validated_data['slug'] = slug
@@ -91,7 +93,7 @@ class ServiceCategorySerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         if 'name' in validated_data:
-            validated_data['slug'] = slugify(validated_data['name'])
+            validated_data['slug'] = slugify(unidecode(validated_data['name']))
         return super().update(instance, validated_data)
 
 
@@ -151,11 +153,25 @@ class AdminLogSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+
 class ProfessionalProfileSerializer(serializers.ModelSerializer):
+    user = serializers.SerializerMethodField()
+
     class Meta:
         model = ProfessionalProfile
-        fields = '__all__'
+        fields = [
+            'user', 'bio', 'hourly_rate', 'years_of_experience',
+            'is_available', 'address',
+            'average_rating', 'total_reviews', 'total_completed_jobs'
+        ]
         read_only_fields = ['user', 'average_rating', 'total_reviews', 'total_completed_jobs']
+
+    def get_user(self, obj):
+        return {
+            'username': obj.user.username,
+            'avatar': obj.user.avatar.url if obj.user.avatar else None
+        }
+
 
 
 

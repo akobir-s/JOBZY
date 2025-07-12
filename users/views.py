@@ -186,6 +186,9 @@ class ServiceCategoryViewSet(viewsets.ModelViewSet):
         return [permissions.IsAdminUser()]
 
 
+    
+
+
 
 
 class ProfessionalServiceViewSet(viewsets.ModelViewSet):
@@ -267,6 +270,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
         return Payment.objects.filter(booking__client=self.request.user)
 
 
+
 class ReviewViewSet(viewsets.ModelViewSet):
     serializer_class = ReviewSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -275,7 +279,19 @@ class ReviewViewSet(viewsets.ModelViewSet):
         return Review.objects.filter(client=self.request.user)
 
     def perform_create(self, serializer):
+        professional = serializer.validated_data.get('professional')
+
+        has_booking = Booking.objects.filter(
+            client=self.request.user,
+            professional=professional,
+            status='completed'  
+        ).exists()
+
+        if not has_booking:
+            raise ValidationError("You can only review professionals you've booked.")
+
         serializer.save(client=self.request.user)
+
 
 
 class MessageViewSet(viewsets.ModelViewSet):
