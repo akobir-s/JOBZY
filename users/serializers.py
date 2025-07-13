@@ -170,6 +170,7 @@ class ProfessionalProfileSerializer(serializers.ModelSerializer):
 
     def get_user(self, obj):
         return {
+            'id': obj.user.id,
             'username': obj.user.username,
             'avatar': obj.user.avatar.url if obj.user.avatar else None
         }
