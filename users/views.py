@@ -440,6 +440,14 @@ class ProfessionalSearchView(generics.ListAPIView):
 
     def get_queryset(self):
         return ProfessionalProfile.objects.all()
+    
+
+class ProfessionalSearchDetailView(generics.RetrieveAPIView):
+    queryset = ProfessionalProfile.objects.all() 
+    serializer_class = ProfessionalProfileDetailSerializer
+    permission_classes = [permissions.AllowAny]
+    lookup_field = 'id'
+
 
 
 class DashboardView(generics.RetrieveAPIView):

@@ -49,6 +49,7 @@ urlpatterns = [
     re_path(r'^swagger/$', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     re_path(r'^redoc/$', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
     path('search/professionals/', ProfessionalSearchView.as_view(), name='professional-search'),
+    path('search/professionals/<int:id>/', ProfessionalSearchDetailView.as_view(), name='professional-search'),
     path('dashboard/', DashboardView.as_view(), name='dashboard'),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

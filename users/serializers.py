@@ -175,8 +175,31 @@ class ProfessionalProfileSerializer(serializers.ModelSerializer):
             'id': obj.user.id,
             'username': obj.user.username,
             'avatar': obj.user.avatar.url if obj.user.avatar else None,
-            'phone': obj.user.phone,
         }
+    
+
+class ProfessionalProfileDetailSerializer(serializers.ModelSerializer):
+    user = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProfessionalProfile
+        fields = [
+            'user', 'bio', 'hourly_rate', 'years_of_experience',
+            'is_available', 'address',
+            'average_rating', 'total_reviews', 'total_completed_jobs', 'id'
+        ]
+        read_only_fields = ['user', 'average_rating', 'total_reviews', 'total_completed_jobs']
+
+    def get_user(self, obj):
+        return {
+            'id': obj.user.id,
+            'username': obj.user.username,
+            'phone': obj.user.phone,
+            'first_name': obj.user.first_name,
+            'last_name': obj.user.last_name,
+            'avatar': obj.user.avatar.url if obj.user.avatar else None,
+        }
+
 
 
 
