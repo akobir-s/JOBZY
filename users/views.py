@@ -15,10 +15,10 @@ from rest_framework.decorators import action
 from django.utils import timezone
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .filters import ProfessionalServiceFilter
-from django.db.models import Q
+from django.db.models import Count, Sum, Avg, Q
 import uuid
 from rest_framework.exceptions import PermissionDenied
-
+from datetime import datetime, timedelta
 
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -275,6 +275,8 @@ class BookingViewSet(viewsets.ModelViewSet):
         booking.status = 'COMPLETED'
         booking.save()
         return Response({'status': 'completed', 'booking_id': booking.id})
+    
+
 
     @action(detail=True, methods=['post'])
     def confirm(self, request, pk=None):
@@ -305,14 +307,24 @@ class BookingViewSet(viewsets.ModelViewSet):
         if booking.status in ['COMPLETED', 'CANCELLED']:
             return Response({'error': 'Booking already completed or cancelled.'}, status=400)
 
+        cancellation_reason = request.data.get('cancellation_reason', '').strip()
+        if cancellation_reason:
+            booking.cancellation_reason = cancellation_reason
+
         booking.status = 'CANCELLED'
         booking.save()
 
         if user == booking.client:
-            message = f"{booking.client.username} has cancelled the booking for '{booking.service.title}'."
+            if cancellation_reason:
+                message = f"{booking.client.username} has cancelled the booking for '{booking.service.title}' with reason: {cancellation_reason}."
+            else:
+                message = f"{booking.client.username} has cancelled the booking for '{booking.service.title}'."
             recipient = booking.professional.user
         else:
-            message = f"Your booking for '{booking.service.title}' was cancelled by the professional."
+            if cancellation_reason:
+                message = f"Your booking for '{booking.service.title}' was cancelled by the professional with reason: {cancellation_reason}."
+            else:
+                message = f"Your booking for '{booking.service.title}' was cancelled by the professional."
             recipient = booking.client
 
         Notification.objects.create(
@@ -321,7 +333,12 @@ class BookingViewSet(viewsets.ModelViewSet):
             link=f"/bookings/{booking.id}/"
         )
 
-        return Response({'status': 'cancelled', 'booking_id': booking.id})
+        return Response({
+            'status': 'cancelled',
+            'booking_id': booking.id,
+            'cancellation_reason': cancellation_reason or None
+        })
+
 
 
 
@@ -542,3 +559,126 @@ class UpdateAvatarView(APIView):
             return Response({'avatar': serializer.data['avatar']}, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+
+class AdminDashboardView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        # User Statistics
+        total_users = User.objects.count()
+        professional_users = User.objects.filter(is_professional=True).count()
+        regular_users = total_users - professional_users
+        today = timezone.now()
+        start_of_month = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        new_users_this_month = User.objects.filter(created_at__gte=start_of_month).count()
+
+        # Professional Statistics
+        total_professionals = professional_users
+        active_professionals = ProfessionalProfile.objects.filter(is_available=True).count()
+        top_rated_professionals = ProfessionalProfile.objects.order_by('-average_rating')[:5]
+        most_completed_jobs = ProfessionalProfile.objects.order_by('-total_completed_jobs')[:5]
+
+        # Service Statistics
+        total_services = ProfessionalService.objects.count()
+        popular_categories = ServiceCategory.objects.annotate(num_services=Count('professionalservice')).order_by('-num_services')[:5]
+        services_with_ratings = ProfessionalService.objects.annotate(
+            avg_rating=Avg('booking__review__rating')
+        ).filter(avg_rating__isnull=False).order_by('-avg_rating')[:5]
+
+        # Booking Statistics
+        total_bookings = Booking.objects.count()
+        completed_bookings = Booking.objects.filter(status='COMPLETED').count()
+        cancelled_bookings = Booking.objects.filter(status='CANCELLED').count()
+        pending_bookings = Booking.objects.filter(status='PENDING').count()
+        this_month_bookings = Booking.objects.filter(created_at__gte=start_of_month).count()
+        last_month_end = start_of_month - timedelta(days=1)
+        last_month_start = last_month_end.replace(day=1)
+        last_month_bookings = Booking.objects.filter(created_at__gte=last_month_start, created_at__lt=start_of_month).count()
+
+        # Payment Statistics
+        total_revenue = Payment.objects.filter(status='COMPLETED').aggregate(total=Sum('amount'))['total'] or 0
+        average_payment = Payment.objects.filter(status='COMPLETED').aggregate(avg=Avg('amount'))['avg'] or 0
+        payment_methods = Payment.objects.values('payment_method').annotate(count=Count('id'))
+        top_earning_professionals = ProfessionalProfile.objects.annotate(
+            total_earnings=Sum('booking__payment__amount', filter=Q(booking__payment__status='COMPLETED'))
+        ).order_by('-total_earnings')[:5]
+
+        # Review Statistics
+        average_rating = Review.objects.aggregate(avg=Avg('rating'))['avg'] or 0
+        total_reviews = Review.objects.count()
+        rating_distribution = Review.objects.values('rating').annotate(count=Count('id')).order_by('rating')
+
+        # System Health
+        unconfirmed_payments = Payment.objects.filter(status='PENDING').count()
+        system_alerts = []
+        if pending_bookings > 10:
+            system_alerts.append("High number of pending bookings.")
+
+        # Build the response
+        response_data = {
+            "user_stats": {
+                "total_users": total_users,
+                "professional_users": professional_users,
+                "regular_users": regular_users,
+                "new_users_this_month": new_users_this_month
+            },
+            "professional_stats": {
+                "total_professionals": total_professionals,
+                "active_professionals": active_professionals,
+                "top_rated_professionals": [
+                    {"id": p.id, "username": p.user.username, "rating": p.average_rating}
+                    for p in top_rated_professionals
+                ],
+                "most_completed_jobs": [
+                    {"id": p.id, "username": p.user.username, "completed_jobs": p.total_completed_jobs}
+                    for p in most_completed_jobs
+                ]
+            },
+            "service_stats": {
+                "total_services": total_services,
+                "popular_categories": [
+                    {"category": c.name, "count": c.num_services}
+                    for c in popular_categories
+                ],
+                "top_rated_services": [
+                    {"id": s.id, "title": s.title, "rating": s.avg_rating}
+                    for s in services_with_ratings
+                ]
+            },
+            "booking_stats": {
+                "total_bookings": total_bookings,
+                "completed_bookings": completed_bookings,
+                "cancelled_bookings": cancelled_bookings,
+                "pending_bookings": pending_bookings,
+                "booking_trends": {
+                    "this_month": this_month_bookings,
+                    "last_month": last_month_bookings
+                }
+            },
+            "payment_stats": {
+                "total_revenue": float(total_revenue),
+                "average_payment": float(average_payment),
+                "payment_methods": {pm['payment_method']: pm['count'] for pm in payment_methods},
+                "top_earning_professionals": [
+                    {"id": p.id, "username": p.user.username, "earnings": float(p.total_earnings or 0)}
+                    for p in top_earning_professionals
+                ]
+            },
+            "review_stats": {
+                "average_rating": float(average_rating),
+                "total_reviews": total_reviews,
+                "rating_distribution": {str(r['rating']): r['count'] for r in rating_distribution}
+            },
+            "system_health": {
+                "pending_bookings": pending_bookings,
+                "unconfirmed_payments": unconfirmed_payments,
+                "system_alerts": system_alerts
+            }
+        }
+
+        return Response(response_data)
+    
+
+
+ 

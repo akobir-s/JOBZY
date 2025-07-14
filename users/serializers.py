@@ -116,7 +116,7 @@ class AvailabilitySlotSerializer(serializers.ModelSerializer):
 class BookingSerializer(serializers.ModelSerializer):
     class Meta:
         model = Booking
-        fields = ['client', 'professional', 'service','slot', 'status', 'notes', 'created_at',
+        fields = ['id','client', 'professional', 'service','slot', 'status', 'notes', 'created_at',
                   'updated_at', 'cancellation_reason', 'start_time']
         read_only_fields = ['client', 'status', 'created_at', 'updated_at']
 
@@ -164,7 +164,7 @@ class ProfessionalProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProfessionalProfile
         fields = [
-            'user', 'bio', 'hourly_rate', 'years_of_experience',
+            'user','id', 'bio', 'hourly_rate', 'years_of_experience',
             'is_available', 'address',
             'average_rating', 'total_reviews', 'total_completed_jobs'
         ]
@@ -275,3 +275,9 @@ class AvatarUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['avatar']
+
+
+
+
+
+

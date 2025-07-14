@@ -62,4 +62,5 @@ urlpatterns = [
     path('user-profile/', UserProfileView.as_view(), name= 'user-profile'),
     path('services/<int:pk>/', ProfessionalServiceDetailView.as_view(), name='service-detail'),
     path('update-avatar/', UpdateAvatarView.as_view(), name='update-avatar'),
+    path('admin-dashboard/', AdminDashboardView.as_view(), name='admin-dashboard'),
 ]
