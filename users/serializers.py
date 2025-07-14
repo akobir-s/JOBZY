@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model, hashers
 from rest_framework.exceptions import ValidationError
 from django.utils.text import slugify
 from unidecode import unidecode
+from django_filters import CharFilter
 User = get_user_model()
 
 class UserRegisterSerializer(serializers.ModelSerializer):
@@ -115,7 +116,8 @@ class AvailabilitySlotSerializer(serializers.ModelSerializer):
 class BookingSerializer(serializers.ModelSerializer):
     class Meta:
         model = Booking
-        fields = '__all__'
+        fields = ['client', 'professional', 'service','slot', 'status', 'notes', 'created_at',
+                  'updated_at', 'cancellation_reason', 'start_time']
         read_only_fields = ['client', 'status', 'created_at', 'updated_at']
 
 
@@ -172,10 +174,28 @@ class ProfessionalProfileSerializer(serializers.ModelSerializer):
         return {
             'id': obj.user.id,
             'username': obj.user.username,
-            'avatar': obj.user.avatar.url if obj.user.avatar else None
+            'avatar': obj.user.avatar.url if obj.user.avatar else None,
+            'phone': obj.user.phone,
         }
 
 
+
+class UserShortInfoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'phone', 'avatar']
+
+class ProfessionalServiceDetailSerializer(serializers.ModelSerializer):
+    category = serializers.SlugRelatedField(read_only=True, slug_field='name')
+    user = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProfessionalService
+        fields = '__all__'  
+
+    def get_user(self, obj):
+        user = obj.professional.user
+        return UserShortInfoSerializer(user).data
 
 
 
@@ -185,6 +205,7 @@ class ProfessionalFilterServiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProfessionalService
         fields = '__all__'
+
 
 
 class UserProfileSerializer(serializers.ModelSerializer):

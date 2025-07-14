@@ -478,6 +478,14 @@ class PublicServiceListView(generics.ListAPIView):
     ordering_fields = ['duration', 'fixed_price']
 
 
+class PublicServiceDetailView(generics.RetrieveAPIView):
+    queryset = ProfessionalService.objects.filter(
+        is_available=True,
+        professional__user__is_professional=True
+    )
+    serializer_class = ProfessionalServiceDetailSerializer
+    lookup_field = 'id'
+
 
 # get user
 
