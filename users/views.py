@@ -428,12 +428,35 @@ class MessageViewSet(viewsets.ModelViewSet):
         serializer.save(sender=self.request.user)
 
 
+
 class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = NotificationSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         return Notification.objects.filter(user=self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def mark_as_read(self, request, pk=None):
+        """
+        Mark a single notification as read.
+        """
+        notification = self.get_object()
+        notification.is_read = True
+        notification.save()
+        serializer = self.get_serializer(notification)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['post'])
+    def mark_all_as_read(self, request):
+        """
+        Mark all unread notifications for the user as read.
+        """
+        notifications = Notification.objects.filter(user=request.user, is_read=False)
+        count = notifications.count()
+        notifications.update(is_read=True)
+        return Response({'status': f'{count} notifications marked as read'})
+
 
 
 class AdminLogViewSet(viewsets.ModelViewSet):
