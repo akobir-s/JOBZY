@@ -1,0 +1,6 @@
+{
+  "python.pythonPath": "/home/akobir/PROJECT_/.venv/bin/python",
+  "python.analysis.extraPaths": [
+    "./users"
+  ]
+}

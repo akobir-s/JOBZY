@@ -19,7 +19,8 @@ from django.db.models import Count, Sum, Avg, Q
 import uuid
 from rest_framework.exceptions import PermissionDenied
 from datetime import datetime, timedelta
-
+from dateutil.relativedelta import relativedelta
+from django.db.models.functions import ExtractYear, ExtractMonth
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
@@ -584,42 +585,80 @@ class UpdateAvatarView(APIView):
 
 
 
+
 class AdminDashboardView(APIView):
     permission_classes = [IsAdminUser]
 
     def get(self, request):
-        # User Statistics
+        # Calculate the start date for the last 12 months
+        today = timezone.now()
+        start_date = (today - relativedelta(months=11)).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        # Generate list of (year, month) tuples for the last 12 months
+        months = []
+        current_date = start_date
+        for _ in range(12):
+            months.append((current_date.year, current_date.month))
+            current_date += relativedelta(months=1)
+
+        ### User Statistics
         total_users = User.objects.count()
         professional_users = User.objects.filter(is_professional=True).count()
         regular_users = total_users - professional_users
-        today = timezone.now()
         start_of_month = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         new_users_this_month = User.objects.filter(created_at__gte=start_of_month).count()
 
-        # Professional Statistics
+        # Monthly User Registrations
+        user_counts = User.objects.filter(created_at__gte=start_date).annotate(
+            year=ExtractYear('created_at'),
+            month=ExtractMonth('created_at')
+        ).values('year', 'month').annotate(count=Count('id')).order_by('year', 'month')
+        user_count_dict = {(uc['year'], uc['month']): uc['count'] for uc in user_counts}
+        monthly_registrations = [
+            {"month": i + 1, "count": user_count_dict.get((year, month), 0)}
+            for i, (year, month) in enumerate(months)
+        ]
+
+        ### Professional Statistics
         total_professionals = professional_users
         active_professionals = ProfessionalProfile.objects.filter(is_available=True).count()
         top_rated_professionals = ProfessionalProfile.objects.order_by('-average_rating')[:5]
         most_completed_jobs = ProfessionalProfile.objects.order_by('-total_completed_jobs')[:5]
 
-        # Service Statistics
+        ### Service Statistics
         total_services = ProfessionalService.objects.count()
-        popular_categories = ServiceCategory.objects.annotate(num_services=Count('professionalservice')).order_by('-num_services')[:5]
+        popular_categories = ServiceCategory.objects.annotate(
+            num_services=Count('professionalservice')
+        ).order_by('-num_services')[:5]
         services_with_ratings = ProfessionalService.objects.annotate(
             avg_rating=Avg('booking__review__rating')
         ).filter(avg_rating__isnull=False).order_by('-avg_rating')[:5]
 
-        # Booking Statistics
+        ### Booking Statistics
         total_bookings = Booking.objects.count()
         completed_bookings = Booking.objects.filter(status='COMPLETED').count()
         cancelled_bookings = Booking.objects.filter(status='CANCELLED').count()
         pending_bookings = Booking.objects.filter(status='PENDING').count()
         this_month_bookings = Booking.objects.filter(created_at__gte=start_of_month).count()
-        last_month_end = start_of_month - timedelta(days=1)
-        last_month_start = last_month_end.replace(day=1)
-        last_month_bookings = Booking.objects.filter(created_at__gte=last_month_start, created_at__lt=start_of_month).count()
+        last_month_end = start_of_month - relativedelta(days=1)
+        last_month_start = last_month_end.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        last_month_bookings = Booking.objects.filter(
+            created_at__gte=last_month_start,
+            created_at__lt=start_of_month
+        ).count()
 
-        # Payment Statistics
+        # Monthly Bookings
+        booking_counts = Booking.objects.filter(created_at__gte=start_date).annotate(
+            year=ExtractYear('created_at'),
+            month=ExtractMonth('created_at')
+        ).values('year', 'month').annotate(count=Count('id')).order_by('year', 'month')
+        booking_count_dict = {(bc['year'], bc['month']): bc['count'] for bc in booking_counts}
+        monthly_bookings = [
+            {"month": i + 1, "count": booking_count_dict.get((year, month), 0)}
+            for i, (year, month) in enumerate(months)
+        ]
+
+        ### Payment Statistics
         total_revenue = Payment.objects.filter(status='COMPLETED').aggregate(total=Sum('amount'))['total'] or 0
         average_payment = Payment.objects.filter(status='COMPLETED').aggregate(avg=Avg('amount'))['avg'] or 0
         payment_methods = Payment.objects.values('payment_method').annotate(count=Count('id'))
@@ -627,30 +666,42 @@ class AdminDashboardView(APIView):
             total_earnings=Sum('booking__payment__amount', filter=Q(booking__payment__status='COMPLETED'))
         ).order_by('-total_earnings')[:5]
 
-        # Review Statistics
+        # Monthly Revenue
+        revenue_data = Payment.objects.filter(status='COMPLETED', processed_at__gte=start_date).annotate(
+            year=ExtractYear('processed_at'),
+            month=ExtractMonth('processed_at')
+        ).values('year', 'month').annotate(total=Sum('amount')).order_by('year', 'month')
+        revenue_dict = {(rd['year'], rd['month']): rd['total'] for rd in revenue_data}
+        monthly_revenue = [
+            {"month": i + 1, "amount": float(revenue_dict.get((year, month), 0.0))}
+            for i, (year, month) in enumerate(months)
+        ]
+
+        ### Review Statistics
         average_rating = Review.objects.aggregate(avg=Avg('rating'))['avg'] or 0
         total_reviews = Review.objects.count()
         rating_distribution = Review.objects.values('rating').annotate(count=Count('id')).order_by('rating')
 
-        # System Health
+        ### System Health
         unconfirmed_payments = Payment.objects.filter(status='PENDING').count()
         system_alerts = []
         if pending_bookings > 10:
             system_alerts.append("High number of pending bookings.")
 
-        # Build the response
+        ### Build the Response Data
         response_data = {
             "user_stats": {
                 "total_users": total_users,
                 "professional_users": professional_users,
                 "regular_users": regular_users,
-                "new_users_this_month": new_users_this_month
+                "new_users_this_month": new_users_this_month,
+                "monthly_registrations": monthly_registrations
             },
             "professional_stats": {
                 "total_professionals": total_professionals,
                 "active_professionals": active_professionals,
                 "top_rated_professionals": [
-                    {"id": p.id, "username": p.user.username, "rating": p.average_rating}
+                    {"id": p.id, "username": p.user.username, "rating": float(p.average_rating or 0)}
                     for p in top_rated_professionals
                 ],
                 "most_completed_jobs": [
@@ -665,7 +716,7 @@ class AdminDashboardView(APIView):
                     for c in popular_categories
                 ],
                 "top_rated_services": [
-                    {"id": s.id, "title": s.title, "rating": s.avg_rating}
+                    {"id": s.id, "title": s.title, "rating": float(s.avg_rating)}
                     for s in services_with_ratings
                 ]
             },
@@ -677,7 +728,8 @@ class AdminDashboardView(APIView):
                 "booking_trends": {
                     "this_month": this_month_bookings,
                     "last_month": last_month_bookings
-                }
+                },
+                "monthly_bookings": monthly_bookings
             },
             "payment_stats": {
                 "total_revenue": float(total_revenue),
@@ -686,7 +738,8 @@ class AdminDashboardView(APIView):
                 "top_earning_professionals": [
                     {"id": p.id, "username": p.user.username, "earnings": float(p.total_earnings or 0)}
                     for p in top_earning_professionals
-                ]
+                ],
+                "monthly_revenue": monthly_revenue
             },
             "review_stats": {
                 "average_rating": float(average_rating),
@@ -700,8 +753,9 @@ class AdminDashboardView(APIView):
             }
         }
 
-        return Response(response_data)
-    
-
-
- 
+        # Return the Response
+        return Response({
+            "data": response_data,
+            "statusCode": 200,
+            "errors": []
+        })
