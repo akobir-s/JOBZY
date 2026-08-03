@@ -1,67 +1,80 @@
 import json
+
+from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
-from django.contrib.auth.models import User
-from .models import Message  
+from django.contrib.auth import get_user_model
+
+from .models import Message
+
+User = get_user_model()
+
 
 class ChatConsumer(AsyncWebsocketConsumer):
+    """Private chat over `ws/chat/<room_name>/`.
+
+    Room names are of the form `<username_a>__<username_b>`; a client may only
+    join a room whose name contains their own username.
+    """
+
     async def connect(self):
         self.room_name = self.scope['url_route']['kwargs']['room_name']
         self.room_group_name = f'chat_{self.room_name}'
-        self.user = self.scope['user']  # Get the authenticated user
+        self.user = self.scope['user']
 
-        # Check if user is authenticated
-        if not self.user.is_authenticated:
-            await self.close()
-            return
-
-        # Add permission check (customize this based on your app)
-        # Example: room_name could be "user1_user2" for private chats
-        if not self.can_join_room():
-            await self.close()
+        if not self.user.is_authenticated or not self.can_join_room():
+            await self.close(code=4003)
             return
 
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
 
     def can_join_room(self):
-        # Example logic: room_name like "user1_user2" for private chats
-        users = self.room_name.split('_')
-        return self.user.username in users  # Only allow users in the room name
+        participants = self.room_name.split('__')
+        return self.user.username in participants
 
     async def disconnect(self, close_code):
-        await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+        if hasattr(self, 'room_group_name'):
+            await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+
+    @database_sync_to_async
+    def _save_message(self, recipient_username, content):
+        recipient = User.objects.get(username=recipient_username)
+        Message.objects.create(sender=self.user, recipient=recipient, content=content)
 
     async def receive(self, text_data):
         try:
             data = json.loads(text_data)
-            message = data.get('message', '')
-            sender = self.user.username  # Use the authenticated user
-            receiver = data.get('receiver', '')
+        except json.JSONDecodeError:
+            await self.send(text_data=json.dumps({'error': 'Invalid JSON payload'}))
+            return
 
-            # Save to database
-            receiver_user = User.objects.get(username=receiver)
-            Message.objects.create(
-                sender=self.user,
-                recipient=receiver_user,
-                content=message,
-                # Add booking if your app uses it
-            )
+        content = (data.get('message') or '').strip()
+        recipient_username = (data.get('receiver') or '').strip()
 
-            # Broadcast to the group
-            await self.channel_layer.group_send(
-                self.room_group_name,
-                {
-                    'type': 'chat_message',
-                    'message': message,
-                    'sender': sender,
-                    'receiver': receiver,
-                }
-            )
+        if not content or not recipient_username:
+            await self.send(text_data=json.dumps(
+                {'error': "Both 'message' and 'receiver' are required"}))
+            return
+        if recipient_username not in self.room_name.split('__'):
+            await self.send(text_data=json.dumps(
+                {'error': 'Receiver is not a participant of this room'}))
+            return
+
+        try:
+            await self._save_message(recipient_username, content)
         except User.DoesNotExist:
             await self.send(text_data=json.dumps({'error': 'Receiver not found'}))
-        except Exception as e:
-            print(f"Error in receive: {str(e)}")
-            await self.send(text_data=json.dumps({'error': 'Something went wrong'}))
+            return
+
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                'type': 'chat_message',
+                'message': content,
+                'sender': self.user.username,
+                'receiver': recipient_username,
+            },
+        )
 
     async def chat_message(self, event):
         await self.send(text_data=json.dumps({
@@ -69,4 +82,3 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'sender': event.get('sender', ''),
             'receiver': event.get('receiver', ''),
         }))
-        

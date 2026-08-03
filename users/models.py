@@ -16,7 +16,7 @@ class User(AbstractUser):
     is_verified = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    last_login = models.DateTimeField(null=True)
+    last_login = models.DateTimeField(null=True, blank=True)
     previous_login = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
@@ -98,6 +98,9 @@ class Booking(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     cancellation_reason = models.TextField(blank=True, null=True)
 
+    class Meta:
+        ordering = ['-created_at']
+
     def __str__(self):
         return f"Booking by {self.client.username} for {self.service.title}"
 
@@ -149,6 +152,9 @@ class Message(models.Model):
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        ordering = ['-created_at']
+
     def __str__(self):
         return f"From {self.sender.username} to {self.recipient.username}"
 
@@ -158,7 +164,12 @@ class Notification(models.Model):
     message = models.CharField(max_length=255)
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
-    link = models.URLField(null=True)
+    # Stores app-relative paths such as "/bookings/12/", so this is a plain
+    # CharField rather than a URLField (which would reject relative paths).
+    link = models.CharField(max_length=255, null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
 
     def __str__(self):
         return f"Notification for {self.user.username}"
