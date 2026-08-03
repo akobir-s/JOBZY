@@ -1,12 +1,19 @@
 from datetime import timedelta
 
+from asgiref.sync import async_to_sync
+from channels.testing import WebsocketCommunicator
 from django.contrib.auth import get_user_model
+from django.test import TransactionTestCase, override_settings
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
+from rest_framework_simplejwt.tokens import AccessToken
+
+from server.asgi import application
 
 from .models import (
     AvailabilitySlot,
+    Message,
     Booking,
     Notification,
     ProfessionalProfile,
@@ -357,3 +364,68 @@ class SchemaTests(APITestCase):
         for path in ('/login/', '/register/', '/logout/', '/bookings/',
                      '/admin-dashboard/', '/public-services/', '/notifications/'):
             self.assertIn(path, schema['paths'], f'{path} missing from OpenAPI schema')
+
+
+@override_settings(CHANNEL_LAYERS={
+    'default': {'BACKEND': 'channels.layers.InMemoryChannelLayer'}
+})
+class WebSocketChatTests(TransactionTestCase):
+    """Covers the chat consumer end to end, including JWT handshake auth.
+
+    Uses the in-memory channel layer so the suite does not require Redis.
+    """
+
+    def setUp(self):
+        self.alice = make_user('alice_ws', '+992900000070')
+        self.bob = make_user('bob_ws', '+992900000071')
+        self.room = 'alice_ws__bob_ws'
+
+    def _token(self, user):
+        return str(AccessToken.for_user(user))
+
+    async def _connect(self, user, room=None):
+        room = room or self.room
+        communicator = WebsocketCommunicator(
+            application, f'/ws/chat/{room}/?token={self._token(user)}'
+        )
+        connected, _ = await communicator.connect()
+        return communicator, connected
+
+    def test_authenticated_participant_can_connect_and_send(self):
+        async def scenario():
+            alice_conn, connected = await self._connect(self.alice)
+            self.assertTrue(connected)
+
+            bob_conn, bob_connected = await self._connect(self.bob)
+            self.assertTrue(bob_connected)
+
+            await alice_conn.send_json_to({'message': 'Hi Bob', 'receiver': 'bob_ws'})
+            received = await bob_conn.receive_json_from(timeout=5)
+
+            self.assertEqual(received['message'], 'Hi Bob')
+            self.assertEqual(received['sender'], 'alice_ws')
+
+            await alice_conn.disconnect()
+            await bob_conn.disconnect()
+
+        async_to_sync(scenario)()
+        self.assertTrue(Message.objects.filter(sender=self.alice, content='Hi Bob').exists())
+
+    def test_connection_without_token_is_rejected(self):
+        async def scenario():
+            communicator = WebsocketCommunicator(application, f'/ws/chat/{self.room}/')
+            connected, _ = await communicator.connect()
+            self.assertFalse(connected)
+            await communicator.disconnect()
+
+        async_to_sync(scenario)()
+
+    def test_outsider_cannot_join_room(self):
+        outsider = make_user('mallory', '+992900000072')
+
+        async def scenario():
+            communicator, connected = await self._connect(outsider)
+            self.assertFalse(connected)
+            await communicator.disconnect()
+
+        async_to_sync(scenario)()

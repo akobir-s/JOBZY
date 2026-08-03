@@ -342,12 +342,25 @@ zero-filled gaps, so charts can be rendered without client-side padding.
 Connect to:
 
 ```
-wss://<host>/ws/chat/<username_a>__<username_b>/
+wss://<host>/ws/chat/<username_a>__<username_b>/?token=<access_token>
 ```
 
 The room name is the two participants' usernames joined by a double underscore.
 The server rejects the connection with code `4003` if the caller is not
 authenticated or their username is not part of the room name.
+
+Browsers cannot set an `Authorization` header on a WebSocket handshake, so the
+JWT access token is passed as the `token` query parameter instead. Session
+authentication also works, which is what the Django admin uses.
+
+```javascript
+const token = localStorage.getItem('access');
+const socket = new WebSocket(
+  `wss://62-238-33-236.sslip.io/ws/chat/alice__bob/?token=${token}`
+);
+socket.onmessage = (event) => console.log(JSON.parse(event.data));
+socket.send(JSON.stringify({ message: 'Hello', receiver: 'bob' }));
+```
 
 Send:
 
