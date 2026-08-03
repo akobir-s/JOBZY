@@ -7,6 +7,25 @@ messaging and reviews.
 
 Built with Django 5.2, Django REST Framework and Django Channels.
 
+## Live API
+
+| Resource | URL |
+| --- | --- |
+| API base | `https://62-238-33-236.sslip.io/` |
+| Swagger UI | https://62-238-33-236.sslip.io/swagger/ |
+| ReDoc | https://62-238-33-236.sslip.io/redoc/ |
+| OpenAPI schema | https://62-238-33-236.sslip.io/swagger.json |
+| Django admin | https://62-238-33-236.sslip.io/admin/ |
+| Chat WebSocket | `wss://62-238-33-236.sslip.io/ws/chat/<room>/?token=<access>` |
+
+HTTP redirects to HTTPS. The certificate is issued by Let's Encrypt and renews
+automatically.
+
+The hostname resolves to the server's IP through `sslip.io`, a free wildcard DNS
+service, because certificate authorities cannot issue certificates for bare IP
+addresses. Pointing a real domain at the server later is a DNS record plus one
+`certbot --nginx -d yourdomain.com` run.
+
 ---
 
 ## Contents
@@ -395,8 +414,52 @@ boundaries on every public and private endpoint, and OpenAPI schema generation.
 
 ## Deployment
 
-The included setup runs Daphne under systemd behind nginx, with Let's Encrypt
-for TLS.
+The production instance runs Daphne under systemd behind nginx, with Let's
+Encrypt for TLS.
+
+```
+Internet
+   |
+   v
+nginx :443  ----> /static/  served from /var/www/jobzy/staticfiles
+                  /media/   served from /var/www/jobzy/media
+                  /ws/      proxied with Upgrade headers
+                  /         proxied
+   |
+   v
+daphne 127.0.0.1:8000  (systemd unit "jobzy", user "jobzy")
+   |
+   +--> SQLite  /var/www/jobzy/data/db.sqlite3
+   +--> Redis   127.0.0.1:6379   (Channels layer)
+```
+
+Server layout:
+
+| Path | Contents |
+| --- | --- |
+| `/opt/jobzy/app` | Checked-out repository |
+| `/opt/jobzy/venv` | Virtualenv |
+| `/opt/jobzy/app/.env` | Production secrets, mode 600 |
+| `/var/www/jobzy/data` | SQLite database |
+| `/var/www/jobzy/media` | Uploaded files |
+| `/var/www/jobzy/staticfiles` | `collectstatic` output |
+| `/etc/systemd/system/jobzy.service` | Service unit |
+| `/etc/nginx/sites-available/jobzy` | nginx site |
+
+To ship a new version, push to `main` and then run on the server:
+
+```bash
+bash /opt/jobzy/app/deploy.sh
+```
+
+Useful operational commands:
+
+```bash
+systemctl status jobzy          # service state
+journalctl -u jobzy -f          # live application logs
+tail -f /var/log/nginx/jobzy.error.log
+certbot renew --dry-run         # verify certificate renewal
+```
 
 Production checklist:
 
